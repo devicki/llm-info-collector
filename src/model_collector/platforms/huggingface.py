@@ -73,47 +73,61 @@ class HuggingFaceCollector(BasePlatformCollector):
         """paths-info API로 파일별 상세 보안 스캔 결과를 가져옵니다."""
         if not file_paths:
             return []
-        try:
-            body = urllib.parse.urlencode(
-                [("paths", p) for p in file_paths] + [("expand", "true")]
-            ).encode()
-            resp = await self._client.post(
-                f"/api/models/{model_id}/paths-info/main",
-                content=body,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-            resp.raise_for_status()
-            results = []
-            for entry in resp.json():
-                sec = entry.get("securityFileStatus")
-                if not sec:
-                    continue
-                results.append({
-                    "path": entry.get("path"),
-                    "size": entry.get("size"),
-                    "overall_status": sec.get("status"),
-                    "protect_ai": sec.get("protectAiScan"),
-                    "av_scan": sec.get("avScan"),
-                    "pickle_scan": sec.get("pickleImportScan"),
-                    "virustotal": sec.get("virusTotalScan"),
-                    "jfrog": sec.get("jFrogScan"),
-                })
-            return results
-        except httpx.HTTPStatusError as e:
-            from rich.console import Console as _C
-            if e.response.status_code == 403:
-                _C().print(
-                    "[dim yellow][보안 스캔 상세: 접근 권한 없음 — "
-                    "gated 모델이거나 HF_API_TOKEN이 없습니다. "
-                    ".env에 HF_API_TOKEN을 설정하면 파일별 상세 정보를 볼 수 있습니다.][/dim yellow]"
+        body = urllib.parse.urlencode(
+            [("paths", p) for p in file_paths] + [("expand", "true")]
+        ).encode()
+        for attempt in range(3):
+            try:
+                resp = await self._client.post(
+                    f"/api/models/{model_id}/paths-info/main",
+                    content=body,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
-            else:
-                _C().print(f"[dim yellow][보안 스캔 상세 조회 실패: {e}][/dim yellow]")
-            return []
-        except Exception as e:
-            from rich.console import Console as _C
-            _C().print(f"[dim yellow][보안 스캔 상세 조회 실패: {e}][/dim yellow]")
-            return []
+                if resp.status_code == 429:
+                    wait = float(resp.headers.get("Retry-After", resp.headers.get("X-RateLimit-Reset", 5)))
+                    await asyncio.sleep(wait)
+                    continue
+                if resp.status_code == 403:
+                    console.print(
+                        "[dim yellow][보안 스캔 상세: 접근 권한 없음 — "
+                        "gated 모델이거나 HF_API_TOKEN이 없습니다. "
+                        ".env에 HF_API_TOKEN을 설정하면 파일별 상세 정보를 볼 수 있습니다.][/dim yellow]"
+                    )
+                    return []
+                resp.raise_for_status()
+                results = []
+                has_scan_data = False
+                for entry in resp.json():
+                    sec = entry.get("securityFileStatus")
+                    row: dict = {
+                        "path": entry.get("path"),
+                        "size": entry.get("size"),
+                        "overall_status": sec.get("status") if sec else None,
+                    }
+                    if sec:
+                        has_scan_data = True
+                        row["protect_ai"] = sec.get("protectAiScan")
+                        row["av_scan"] = sec.get("avScan")
+                        row["pickle_scan"] = sec.get("pickleImportScan")
+                        row["virustotal"] = sec.get("virusTotalScan")
+                        row["jfrog"] = sec.get("jFrogScan")
+                    results.append(row)
+
+                # 파일은 있지만 스캔 데이터가 전혀 없으면 재시도
+                if results and not has_scan_data and attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                return results
+            except httpx.HTTPStatusError as e:
+                console.print(f"[dim yellow][보안 스캔 상세 조회 실패 (시도 {attempt+1}/3): {e}][/dim yellow]")
+                if attempt == 2:
+                    return []
+            except Exception as e:
+                console.print(f"[dim yellow][보안 스캔 상세 조회 실패 (시도 {attempt+1}/3): {e}][/dim yellow]")
+                if attempt == 2:
+                    return []
+                await asyncio.sleep(1)
+        return []
 
     # config.json에서 추출할 하이퍼파라미터 (label: [후보 키 리스트])
     _ARCH_PARAM_KEYS: list[tuple[str, list[str]]] = [
@@ -160,6 +174,7 @@ class HuggingFaceCollector(BasePlatformCollector):
             resp = await self._client.get(
                 f"/{model_id}/resolve/main/README.md",
                 headers={"Accept": "text/plain"},
+                follow_redirects=True,
             )
             if resp.status_code != 200:
                 return None, None
@@ -285,8 +300,10 @@ class HuggingFaceCollector(BasePlatformCollector):
         for path, level in issues_map.items():
             if path not in scanned_paths:
                 file_security.append({"path": path, "overall_status": level or None})
-        model_card, card_frontmatter = await self._fetch_model_card(model_id)
-        arch_hyperparams = await self._fetch_arch_hyperparams(model_id)
+        (model_card, card_frontmatter), arch_hyperparams = await asyncio.gather(
+            self._fetch_model_card(model_id),
+            self._fetch_arch_hyperparams(model_id),
+        )
 
         return ModelDetail(
             platform=PlatformType.HUGGINGFACE,
