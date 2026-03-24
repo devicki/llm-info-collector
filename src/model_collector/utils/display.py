@@ -194,6 +194,14 @@ def display_model_detail(model: ModelDetail) -> None:
     content = "\n".join(lines)
     console.print(Panel(content, title=f"[bold white]{model.name}[/bold white]", border_style="blue"))
 
+    if model.arch_hyperparams:
+        table = Table(title="아키텍처 하이퍼파라미터 (config.json)", box=box.ROUNDED, show_lines=True)
+        table.add_column("항목", style="cyan bold", min_width=20)
+        table.add_column("값", style="white")
+        for k, v in model.arch_hyperparams.items():
+            table.add_row(k, str(v))
+        console.print(table)
+
     if model.security_file_details:
         _display_file_security(model.security_file_details)
 

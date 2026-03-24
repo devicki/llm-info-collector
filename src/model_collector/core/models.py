@@ -36,6 +36,7 @@ class ModelDetail(ModelSummary):
     architectures: list[str] = Field(default_factory=list)  # 구체적 클래스 (예: ["LlamaForCausalLM"])
     quantization: Optional[str] = None
     format: Optional[str] = None
+    arch_hyperparams: Optional[dict] = None     # config.json 기반 하이퍼파라미터
 
     # Transformers 정보
     auto_model_class: Optional[str] = None      # 예: "AutoModelForCausalLM"

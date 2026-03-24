@@ -115,6 +115,45 @@ class HuggingFaceCollector(BasePlatformCollector):
             _C().print(f"[dim yellow][보안 스캔 상세 조회 실패: {e}][/dim yellow]")
             return []
 
+    # config.json에서 추출할 하이퍼파라미터 (label: [후보 키 리스트])
+    _ARCH_PARAM_KEYS: list[tuple[str, list[str]]] = [
+        ("레이어 수",        ["num_hidden_layers", "n_layer", "num_layers"]),
+        ("Hidden Size",      ["hidden_size", "n_embd", "d_model"]),
+        ("Attention Heads",  ["num_attention_heads", "n_head", "num_heads"]),
+        ("KV Heads (GQA)",   ["num_key_value_heads"]),
+        ("FFN 중간 크기",    ["intermediate_size", "n_inner", "ffn_dim"]),
+        ("최대 컨텍스트",    ["max_position_embeddings", "n_positions", "n_ctx", "max_sequence_length"]),
+        ("어휘 크기",        ["vocab_size"]),
+        ("활성 함수",        ["hidden_act", "activation_function"]),
+        ("RoPE theta",       ["rope_theta"]),
+        ("Tied Embeddings",  ["tie_word_embeddings"]),
+        ("Attention Bias",   ["attention_bias"]),
+        ("RMS Norm eps",     ["rms_norm_eps"]),
+        ("Layer Norm eps",   ["layer_norm_epsilon", "layer_norm_eps"]),
+        ("Torch dtype",      ["torch_dtype"]),
+    ]
+
+    async def _fetch_arch_hyperparams(self, model_id: str) -> Optional[dict]:
+        """config.json을 직접 가져와 아키텍처 하이퍼파라미터를 추출합니다."""
+        try:
+            resp = await self._client.get(
+                f"/{model_id}/resolve/main/config.json",
+                headers={"Accept": "application/json"},
+                follow_redirects=True,
+            )
+            if resp.status_code != 200:
+                return None
+            cfg = resp.json()
+            result: dict = {}
+            for label, keys in self._ARCH_PARAM_KEYS:
+                for k in keys:
+                    if k in cfg:
+                        result[label] = cfg[k]
+                        break
+            return result if result else None
+        except Exception:
+            return None
+
     async def _fetch_model_card(self, model_id: str) -> tuple[Optional[str], Optional[dict]]:
         """README.md(Model Card) 원문과 YAML frontmatter를 반환합니다."""
         try:
@@ -247,6 +286,7 @@ class HuggingFaceCollector(BasePlatformCollector):
             if path not in scanned_paths:
                 file_security.append({"path": path, "overall_status": level or None})
         model_card, card_frontmatter = await self._fetch_model_card(model_id)
+        arch_hyperparams = await self._fetch_arch_hyperparams(model_id)
 
         return ModelDetail(
             platform=PlatformType.HUGGINGFACE,
@@ -282,6 +322,8 @@ class HuggingFaceCollector(BasePlatformCollector):
             gated=item.get("gated"),
             security_status=sec_repo,
             security_file_details=file_security,
+            # 아키텍처 하이퍼파라미터
+            arch_hyperparams=arch_hyperparams,
             # 모델 명세
             model_card=model_card,
             model_card_frontmatter=card_frontmatter,
