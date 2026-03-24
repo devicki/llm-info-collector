@@ -65,5 +65,8 @@ class ModelDetail(ModelSummary):
     model_card: Optional[str] = None           # HF: README.md 전문 / Ollama: Modelfile 전문
     model_card_frontmatter: Optional[dict] = None  # HF YAML frontmatter 파싱 결과
 
+    # 버전 목록 (Civitai 등 버전 관리 플랫폼)
+    model_versions: list[dict] = Field(default_factory=list)
+
     # 플랫폼 원본 데이터
     raw_data: Optional[dict] = None

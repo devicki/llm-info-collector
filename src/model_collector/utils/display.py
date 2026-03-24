@@ -118,9 +118,14 @@ def _display_file_security(details: list[dict]) -> None:
             for i in imports
             if i.get("safety") != "innocuous"
         ]
-        pkl_imports_str = ", ".join(suspicious) if suspicious else (
-            f"{len(imports)}개 (모두 안전)" if imports else "-"
-        )
+        if suspicious:
+            pkl_imports_str = ", ".join(suspicious)
+        elif imports:
+            pkl_imports_str = f"{len(imports)}개 (모두 안전)"
+        elif pkl.get("message"):
+            pkl_imports_str = pkl["message"]
+        else:
+            pkl_imports_str = "-"
 
         table.add_row(
             f.get("path", ""),
@@ -202,6 +207,24 @@ def display_model_detail(model: ModelDetail) -> None:
             table.add_row(k, str(v))
         console.print(table)
 
+    if model.model_versions:
+        vtable = Table(title="버전 목록", box=box.ROUNDED, show_lines=True)
+        vtable.add_column("버전", style="cyan bold", max_width=25, overflow="fold")
+        vtable.add_column("베이스 모델", style="white", max_width=20)
+        vtable.add_column("다운로드", justify="right", style="yellow")
+        vtable.add_column("파일 수", justify="right", style="green")
+        vtable.add_column("출시일", style="magenta", max_width=22)
+        for v in model.model_versions:
+            pub = (v.get("published_at") or "")[:10]  # YYYY-MM-DD
+            vtable.add_row(
+                v.get("name", "-"),
+                v.get("base_model", "-"),
+                _fmt_num(v.get("downloads")),
+                str(v.get("file_count", 0)),
+                pub or "-",
+            )
+        console.print(vtable)
+
     if model.security_file_details:
         _display_file_security(model.security_file_details)
 
@@ -233,6 +256,15 @@ def display_model_card(model: ModelDetail) -> None:
             Panel(
                 Markdown(body),
                 title=f"[bold white]Model Card — {model.name}[/bold white]",
+                border_style="green",
+            )
+        )
+
+    elif platform == "civitai":
+        console.print(
+            Panel(
+                model.model_card,
+                title=f"[bold white]모델 설명 — {model.name}[/bold white]",
                 border_style="green",
             )
         )
