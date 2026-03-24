@@ -4,11 +4,12 @@
 
 ## 지원 플랫폼
 
-| 플랫폼 | 설명 |
-|--------|------|
-| **Hugging Face** | 공개 모델 허브 |
-| **Ollama** | 로컬 모델 서버 |
-| **Civitai** | 이미지 생성 모델 커뮤니티 |
+| 플랫폼 | ID | 설명 |
+|--------|-----|------|
+| **Hugging Face** | `huggingface` | 공개 모델 허브 |
+| **Ollama** | `ollama` | 로컬 모델 서버 (다운로드된 모델만 조회) |
+| **Civitai** | `civitai` | 이미지 생성 모델 커뮤니티 |
+| **ModelScope** | `modelscope` | 중국어권 AI 모델 허브 |
 
 ## 설치
 
@@ -29,9 +30,10 @@ cp .env.example .env
 ```
 
 ```env
-HF_API_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxx   # Hugging Face (없으면 anonymous rate limit)
-OLLAMA_HOST=http://localhost:11434          # Ollama (기본값)
-CIVITAI_API_TOKEN=your_token_here          # Civitai (없으면 공개 API만 사용)
+HF_API_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxx        # Hugging Face (없으면 public rate limit)
+OLLAMA_HOST=http://localhost:11434               # Ollama (기본값)
+CIVITAI_API_TOKEN=your_token_here               # Civitai (없으면 공개 API만 사용)
+MODELSCOPE_API_TOKEN=your_token_here            # ModelScope (없으면 공개 API만 사용)
 ```
 
 ## 사용법
@@ -52,10 +54,13 @@ python -m model_collector health
 python -m model_collector list --platform huggingface --query "llama" --limit 10
 python -m model_collector list --platform ollama
 python -m model_collector list --platform civitai --query "stable diffusion" --limit 5
+python -m model_collector list --platform modelscope --query "Qwen" --limit 10
 
 # JSON 파일로 저장
 python -m model_collector list --platform huggingface --query "llama" --output results.json
 ```
+
+> **ModelScope**: `--query`에 조직명을 입력하면 해당 조직 모델만 필터링됩니다 (예: `--query Qwen`, `--query deepseek-ai`).
 
 목록 테이블에 표시되는 정보: 모델 ID, 이름, 작성자, 다운로드 수, 좋아요 수, 트렌딩 점수, 태그
 
@@ -65,11 +70,12 @@ python -m model_collector list --platform huggingface --query "llama" --output r
 python -m model_collector detail --platform huggingface --model-id "meta-llama/Llama-3.1-8B-Instruct"
 python -m model_collector detail --platform ollama --model-id "gemma3"
 python -m model_collector detail --platform civitai --model-id "4384"
+python -m model_collector detail --platform modelscope --model-id "Qwen/Qwen2.5-7B-Instruct"
 
 # JSON 파일로 저장
 python -m model_collector detail --platform huggingface --model-id "meta-llama/Llama-3.1-8B-Instruct" --output detail.json
 
-# Model Card / Modelfile 함께 출력
+# Model Card 함께 출력
 python -m model_collector detail --platform huggingface --model-id "meta-llama/Llama-3.1-8B-Instruct" --show-card
 ```
 
@@ -84,6 +90,10 @@ python -m model_collector card --platform huggingface --model-id "google-bert/be
 # Ollama — Modelfile을 구문 강조와 함께 출력
 python -m model_collector card --platform ollama --model-id "gemma3"
 
+# Civitai / ModelScope — 모델 설명 텍스트 출력
+python -m model_collector card --platform civitai --model-id "4384"
+python -m model_collector card --platform modelscope --model-id "deepseek-ai/DeepSeek-R1"
+
 # 원문 텍스트 파일로 저장
 python -m model_collector card --platform huggingface --model-id "meta-llama/Llama-3.1-8B-Instruct" --output card.md
 python -m model_collector card --platform ollama --model-id "gemma3" --output Modelfile
@@ -93,6 +103,8 @@ python -m model_collector card --platform ollama --model-id "gemma3" --output Mo
 |--------|------|------------|
 | Hugging Face | `README.md` | YAML frontmatter → 테이블, 본문 → Markdown 렌더링 |
 | Ollama | `modelfile` 필드 | Dockerfile 구문 강조 + 라인 번호 |
+| Civitai | `description` 필드 | HTML 제거 후 텍스트 출력 |
+| ModelScope | `ReadMeContent` 필드 (detail 응답 내 포함) | Markdown 렌더링 |
 
 ## 수집 정보 상세
 
@@ -104,12 +116,11 @@ python -m model_collector card --platform ollama --model-id "gemma3" --output Mo
 | 파라미터 수 | safetensors 메타데이터 기반 (예: `8.0B`) |
 | AutoModel 클래스 | `AutoModelForCausalLM` 등 |
 | Chat Template | tokenizer에 chat template 존재 여부 |
+| 아키텍처 하이퍼파라미터 | `config.json` 직접 조회 — 레이어 수, hidden size, attention heads, vocab size 등 |
 | 저장 용량 | 전체 저장소 용량 (GB/MB) |
-| 파일 목록 | 저장소 내 모든 파일 |
 | 사용 Space 수 | 이 모델을 사용하는 HF Space 개수 |
 | 추론 서버 상태 | `warm` / `cold` |
 | 다운로드 수 | 누적 다운로드 (`downloadsAllTime`) |
-| 트렌딩 점수 | 목록/상세 모두 제공 |
 | 보안 스캔 | 저장소 요약 + 파일별 5개 스캐너 상세 결과 |
 | Model Card | README.md 전문 (frontmatter YAML 파싱 포함) |
 
@@ -117,11 +128,13 @@ python -m model_collector card --platform ollama --model-id "gemma3" --output Mo
 
 | 스캐너 | 제공 정보 |
 |--------|---------|
-| ProtectAI | 안전 여부 + 보고서 링크 |
+| ProtectAI | 안전 여부 |
 | AV (Cisco Foundation AI) | 안티바이러스 스캔 |
 | Pickle Import Scan | pickle import 목록 + 위험도 (`innocuous` / `suspicious` / `dangerous`) |
-| VirusTotal | 75개 엔진 탐지 결과 |
+| VirusTotal | 멀티 엔진 탐지 결과 |
 | JFrog Research | 모델 위협 분석 |
+
+> **gated 모델** (Meta Llama 등): HuggingFace 웹사이트에서 라이선스 동의 후 `HF_API_TOKEN` 설정 시 파일별 상세 결과 조회 가능.
 
 ### Ollama
 
@@ -134,15 +147,34 @@ python -m model_collector card --platform ollama --model-id "gemma3" --output Mo
 | 라이선스 | `license` 필드 |
 | Modelfile | 모델 전체 명세 (FROM, PARAMETER, TEMPLATE 등) |
 
+> 로컬에 `ollama pull` 된 모델만 조회 가능합니다.
+
 ### Civitai
 
 | 항목 | 설명 |
 |------|------|
-| 모델 타입 | Checkpoint, LORA, Embedding 등 |
-| 베이스 모델 | SD 1.5, SDXL 1.0 등 |
-| 포맷 / 양자화 | SafeTensor / fp16 등 |
+| 모델 타입 | Checkpoint, LoRA, Embedding 등 |
+| 베이스 모델 | SD 1.5, SDXL, Illustrious 등 |
+| FP 정밀도 / 가중치 크기 | `fp16`, `pruned` / `full` 등 |
 | 트리거 워드 | `trainedWords` (학습 키워드) |
+| 버전 목록 | 전체 버전별 다운로드 수, 파일 수, 출시일 |
+| 보안 스캔 | 파일별 Pickle 스캔 + 바이러스 스캔 결과 |
+| 라이선스 | 상업적 사용 허용 범위, 파생 허용 여부 |
 | NSFW 여부 | 목록/상세 모두 제공 |
+
+### ModelScope
+
+| 항목 | 설명 |
+|------|------|
+| 아키텍처 | `Architectures` 클래스명 (예: `DeepseekV3ForCausalLM`) |
+| 파라미터 수 | safetensor 모델 크기 기반 추정 (BF16 기준) |
+| Tensor 타입 | `F32`, `BF16`, `F8_E4M3` 등 |
+| Chat Template | 존재 여부 |
+| 추론 백엔드 | vLLM / LMDeploy / SGLang / Ollama 지원 버전 |
+| arXiv 논문 | 관련 논문 ID |
+| 저장 용량 | 전체 저장소 용량 |
+| 다운로드 / 좋아요 | Downloads / Stars |
+| Model Card | detail 응답에 README 포함 (별도 요청 불필요) |
 
 ## 새 플랫폼 추가
 
@@ -164,7 +196,7 @@ class NewPlatformCollector(BasePlatformCollector):
     async def health_check(self): ...
 
 # 2. platforms/__init__.py 에 import 추가
-from .new_platform import NewPlatformCollector
+from . import new_platform
 ```
 
 ## 테스트

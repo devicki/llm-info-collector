@@ -8,6 +8,7 @@ class PlatformType(str, Enum):
     HUGGINGFACE = "huggingface"
     OLLAMA = "ollama"
     CIVITAI = "civitai"
+    MODELSCOPE = "modelscope"
 
 
 class ModelSummary(BaseModel):

@@ -278,3 +278,12 @@ def display_model_card(model: ModelDetail) -> None:
                 border_style="green",
             )
         )
+
+    elif platform == "modelscope":
+        console.print(
+            Panel(
+                Markdown(model.model_card),
+                title=f"[bold white]Model Card — {model.name}[/bold white]",
+                border_style="green",
+            )
+        )

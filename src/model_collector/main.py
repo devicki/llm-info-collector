@@ -123,7 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # list
     p_list = sub.add_parser("list", help="모델 목록 조회")
-    p_list.add_argument("--platform", "-p", required=True, help="플랫폼 ID (huggingface/ollama/civitai)")
+    p_list.add_argument("--platform", "-p", required=True, help="플랫폼 ID (huggingface/ollama/civitai/modelscope)")
     p_list.add_argument("--query", "-q", default=None, help="검색어")
     p_list.add_argument("--limit", "-l", type=int, default=20, help="최대 결과 수 (기본: 20)")
     p_list.add_argument("--output", "-o", default=None, help="JSON 파일로 저장 경로")
