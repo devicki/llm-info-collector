@@ -102,12 +102,14 @@ def _display_file_security(details: list[dict]) -> None:
     table.add_column("JFrog", justify="center")
     table.add_column("Pickle 임포트", max_width=35, overflow="fold")
 
+    def _scanner_cell(entry: dict, key: str) -> Text | str:
+        """스캐너 키가 없으면 '-', 있으면 status 텍스트 반환."""
+        if key not in entry:
+            return "-"
+        return _status_text((entry[key] or {}).get("status"))
+
     for f in details:
-        protect = f.get("protect_ai") or {}
-        av = f.get("av_scan") or {}
         pkl = f.get("pickle_scan") or {}
-        vt = f.get("virustotal") or {}
-        jfrog = f.get("jfrog") or {}
 
         # pickle imports 요약: safety != innocuous 인 것만 강조
         imports = pkl.get("pickleImports") or []
@@ -123,11 +125,11 @@ def _display_file_security(details: list[dict]) -> None:
         table.add_row(
             f.get("path", ""),
             _status_text(f.get("overall_status")),
-            _status_text(protect.get("status")),
-            _status_text(av.get("status")),
-            _status_text(pkl.get("status")),
-            _status_text(vt.get("status")),
-            _status_text(jfrog.get("status")),
+            _scanner_cell(f, "protect_ai"),
+            _scanner_cell(f, "av_scan"),
+            _scanner_cell(f, "pickle_scan"),
+            _scanner_cell(f, "virustotal"),
+            _scanner_cell(f, "jfrog"),
             pkl_imports_str,
         )
     console.print(table)

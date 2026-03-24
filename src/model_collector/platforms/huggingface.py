@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import urllib.parse
 from typing import Optional
 
 import httpx
@@ -73,9 +74,13 @@ class HuggingFaceCollector(BasePlatformCollector):
         if not file_paths:
             return []
         try:
+            body = urllib.parse.urlencode(
+                [("paths", p) for p in file_paths] + [("expand", "true")]
+            ).encode()
             resp = await self._client.post(
                 f"/api/models/{model_id}/paths-info/main",
-                data={"paths": file_paths, "expand": True},
+                content=body,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
             resp.raise_for_status()
             results = []
@@ -94,7 +99,20 @@ class HuggingFaceCollector(BasePlatformCollector):
                     "jfrog": sec.get("jFrogScan"),
                 })
             return results
-        except Exception:
+        except httpx.HTTPStatusError as e:
+            from rich.console import Console as _C
+            if e.response.status_code == 403:
+                _C().print(
+                    "[dim yellow][보안 스캔 상세: 접근 권한 없음 — "
+                    "gated 모델이거나 HF_API_TOKEN이 없습니다. "
+                    ".env에 HF_API_TOKEN을 설정하면 파일별 상세 정보를 볼 수 있습니다.][/dim yellow]"
+                )
+            else:
+                _C().print(f"[dim yellow][보안 스캔 상세 조회 실패: {e}][/dim yellow]")
+            return []
+        except Exception as e:
+            from rich.console import Console as _C
+            _C().print(f"[dim yellow][보안 스캔 상세 조회 실패: {e}][/dim yellow]")
             return []
 
     async def _fetch_model_card(self, model_id: str) -> tuple[Optional[str], Optional[dict]]:
@@ -213,6 +231,21 @@ class HuggingFaceCollector(BasePlatformCollector):
                 if any(f.endswith(ext) for ext in self._SECURITY_EXTENSIONS)
             ][:20]
         file_security = await self._get_file_security_details(model_id, scan_targets)
+
+        # filesWithIssues 기준으로 보완:
+        # 1) overall_status null → level로 채움
+        # 2) paths-info에 없는 파일 → 행 추가 (상세 스캔 없이 level만)
+        issues_map = {
+            f.get("path", ""): f.get("level")
+            for f in (sec_repo.get("filesWithIssues") or [])
+        }
+        scanned_paths = {e.get("path") for e in file_security}
+        for entry in file_security:
+            if entry.get("overall_status") is None and entry.get("path") in issues_map:
+                entry["overall_status"] = issues_map[entry["path"]]
+        for path, level in issues_map.items():
+            if path not in scanned_paths:
+                file_security.append({"path": path, "overall_status": level or None})
         model_card, card_frontmatter = await self._fetch_model_card(model_id)
 
         return ModelDetail(
@@ -236,7 +269,7 @@ class HuggingFaceCollector(BasePlatformCollector):
             has_chat_template=bool(tokenizer_config.get("chat_template")),
             pipeline_tag=transformers_info.get("pipeline_tag") or item.get("pipeline_tag"),
             # 학습
-            license=card.get("license"),
+            license=card.get("license")[0] if isinstance(card.get("license"), list) else card.get("license"),
             training_datasets=datasets,
             languages=languages,
             base_model=card.get("base_model"),
